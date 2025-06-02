@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zarr-audio"
+version = "0.1.0"
+description = "FLAC codec and tooling for Zarr"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {file = "LICENSE"}
+authors = [
+    {name = "Joe Weiss", email = "joe.weiss@gmail.com"}
+]
+dependencies = [
+    "numpy",
+    "zarr >=2.0.0, <3.0.0",
+    "soundfile",
+    "librosa",
+    "numcodecs",
+    "fsspec[s3]",
+    "flac_numcodecs",
+    "pydub",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "black",
+    "isort",
+    "mypy",
+    "watchdog"
+]
+
+[tool.black]
+line-length = 88
+target-version = ['py39']
+
+[tool.isort]
+profile = "black"
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
