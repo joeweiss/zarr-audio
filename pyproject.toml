@@ -19,6 +19,17 @@ dependencies = [
     "pydub",
 ]
 
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "black",
+    "isort",
+    "mypy",
+    "watchdog"
+]
+
 keywords = ["zarr", "audio", "flac", "wav", "fsspec", "bioacoustics", "soundfile"]
 
 classifiers = [
