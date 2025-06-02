@@ -34,8 +34,8 @@ classifiers = [
     "Operating System :: OS Independent"
 ]
 
-urls = { 
+urls = [
     "Homepage" = "https://github.com/joeweiss/zarr-audio",
     "Repository" = "https://github.com/joeweiss/zarr-audio",
     "Bug Tracker" = "https://github.com/joeweiss/zarr-audio/issues"
-}
+]
