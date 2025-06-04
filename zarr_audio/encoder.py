@@ -12,15 +12,15 @@ from flac_numcodecs import Flac
 
 
 class AudioEncoder:
-    """
-    Encodes an audio file into a Zarr container using FLAC or Blosc compression.
-
-    The audio is first downloaded to a local temporary file (for speed and compatibility),
-    then read in blocks (optionally larger than the target Zarr chunk size),
-    and written into a Zarr store with appropriate metadata.
-
-    Supports uncompressed and losslessly compressed formats like WAV and FLAC.
-    """
+    VALID_S3_STORAGE_CLASSES = {
+        "STANDARD",
+        "STANDARD_IA",
+        "ONEZONE_IA",
+        "INTELLIGENT_TIERING",
+        "GLACIER",
+        "DEEP_ARCHIVE",
+        "REDUCED_REDUNDANCY",
+    }
 
     def __init__(
         self,
@@ -29,16 +29,18 @@ class AudioEncoder:
         storage_options: Optional[dict] = None,
         chunk_duration: int = 10,
         encoding_read_duration: int = 600,
+        storage_class: Optional[str] = None,
     ):
         """
         Initialize an AudioEncoder.
 
         Args:
-            input_uri: fsspec URI to the source audio file (e.g. S3 or local path).
+            input_uri: fsspec URI to the source audio file.
             output_uri: fsspec URI to the output Zarr group.
             storage_options: Dictionary of options passed to fsspec.
-            chunk_duration: Target duration in seconds of each Zarr chunk.
-            encoding_read_duration: Duration (in seconds) of each read block during encoding.
+            chunk_duration: Duration (sec) of each Zarr chunk.
+            encoding_read_duration: Duration (sec) of read blocks while encoding; only adjust if OOM errors occur during encoding.
+            storage_class: Optional S3 storage class (e.g., 'INTELLIGENT_TIERING'). Defaults to INTELLIGENT_TIERING.
         """
         self.input_uri = input_uri
         self.output_uri = output_uri
@@ -46,6 +48,21 @@ class AudioEncoder:
         self.chunk_duration = chunk_duration
         self.encoding_read_duration = encoding_read_duration
         self._local_path: Optional[str] = None
+
+        self.storage_class = storage_class
+
+        if self.output_uri.startswith("s3://"):
+            sc = self.storage_class or "INTELLIGENT_TIERING"
+
+            if sc not in self.VALID_S3_STORAGE_CLASSES:
+                raise ValueError(
+                    f"Invalid S3 storage class: '{sc}'. "
+                    f"Must be one of {sorted(self.VALID_S3_STORAGE_CLASSES)}"
+                )
+
+            self.storage_options.setdefault("s3_additional_kwargs", {})[
+                "StorageClass"
+            ] = sc
 
     def _detect_dtype_and_bit_depth(self, subtype: str) -> Tuple[str, int]:
         """
