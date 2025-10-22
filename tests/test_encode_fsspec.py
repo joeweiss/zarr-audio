@@ -40,8 +40,8 @@ def test_audio_encoder_roundtrip_s3(input_uri, chunk_duration, tmp_path):
         with sf.SoundFile(f) as sf_info:
             subtype = sf_info.subtype
             samplerate = sf_info.samplerate
-            frames = sf_info.frames
-            channels = sf_info.channels
+            # frames = sf_info.frames
+            # channels = sf_info.channels
             dtype = "int16"  # fallback default
             if subtype == "PCM_32":
                 f.seek(0)
@@ -78,6 +78,9 @@ def test_audio_encoder_roundtrip_s3(input_uri, chunk_duration, tmp_path):
         output_uri=output_uri,
         storage_options={"anon": True},  # update with real credentials if needed
         chunk_duration=chunk_duration,
+        compute_spectrogram=True,
+        n_fft=2048,
+        hop_length=512,
     )
     encoder.encode()
 
@@ -103,10 +106,17 @@ def test_audio_encoder_roundtrip_s3(input_uri, chunk_duration, tmp_path):
 
     assert z.attrs["compression"] in {"flac", "blosc"}
 
+    # ✅ Check spectrogram was created
+    assert "spectrogram" in z, "Spectrogram dataset should exist"
+    assert z.attrs["spectrogram_n_fft"] == 2048
+    assert z.attrs["spectrogram_hop_length"] == 512
+    assert z["spectrogram"].shape[0] == 2048 // 2 + 1  # freq bins
+    assert z["spectrogram"].shape[1] > 0  # time frames
+
     print(f"\n[S3 → {input_uri} | Chunk: {chunk_duration}s]")
     print(f"  Samples:       {n_samples}")
     print(f"  Sample rate:   {samplerate}")
-    print(f"  Segment match: ✅")
+    print("  Segment match: ✅")
 
     if inspect_output:
         output_dir = pathlib.Path("tests/output")
@@ -128,8 +138,8 @@ def test_audio_encoder_roundtrip_s3_to_s3(input_uri, chunk_duration, tmp_path):
         with sf.SoundFile(f) as sf_info:
             subtype = sf_info.subtype
             samplerate = sf_info.samplerate
-            frames = sf_info.frames
-            channels = sf_info.channels
+            # frames = sf_info.frames
+            # channels = sf_info.channels
             dtype = "int16"  # fallback default
             if subtype == "PCM_32":
                 f.seek(0)
@@ -173,6 +183,9 @@ def test_audio_encoder_roundtrip_s3_to_s3(input_uri, chunk_duration, tmp_path):
         output_uri=output_uri,
         storage_options=storage_options,
         chunk_duration=chunk_duration,
+        compute_spectrogram=True,
+        n_fft=2048,
+        hop_length=512,
     )
     encoder.encode()
 
@@ -198,7 +211,14 @@ def test_audio_encoder_roundtrip_s3_to_s3(input_uri, chunk_duration, tmp_path):
 
     assert z.attrs["compression"] in {"flac", "blosc"}
 
+    # ✅ Check spectrogram was created
+    assert "spectrogram" in z, "Spectrogram dataset should exist"
+    assert z.attrs["spectrogram_n_fft"] == 2048
+    assert z.attrs["spectrogram_hop_length"] == 512
+    assert z["spectrogram"].shape[0] == 2048 // 2 + 1  # freq bins
+    assert z["spectrogram"].shape[1] > 0  # time frames
+
     print(f"\n[S3 → {input_uri} | Chunk: {chunk_duration}s]")
     print(f"  Samples:       {n_samples}")
     print(f"  Sample rate:   {samplerate}")
-    print(f"  Segment match: ✅")
+    print("  Segment match: ✅")

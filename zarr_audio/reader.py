@@ -33,6 +33,11 @@ class AudioReader:
         self.samplerate: int = self.z.attrs["samplerate"]
         self.channels: int = self.audio.shape[0]
 
+        # Check if spectrogram data is available
+        self.has_spectrogram = "spectrogram" in self.z
+        if self.has_spectrogram:
+            self.spectrogram = self.z["spectrogram"]
+
     def read_array(self, start_time: float, duration: float) -> np.ndarray:
         """
         Return a (channels, samples) NumPy array from the given time range.
@@ -126,3 +131,63 @@ class AudioReader:
         sf.write(buf, pcm, self.samplerate, format=target_format)
         buf.seek(0)
         return AudioSegment.from_file(buf, format=target_format)
+
+    def read_spectrogram_array(
+        self, start_time: float, duration: float
+    ) -> np.ndarray:
+        """
+        Return the spectrogram dB array for a given time range.
+
+        Args:
+            start_time: Start time in seconds.
+            duration: Duration in seconds.
+
+        Returns:
+            NumPy array of shape (freq_bins, time_frames) containing dB values.
+
+        Raises:
+            ValueError: If spectrogram data is not available in this Zarr store.
+        """
+        if not self.has_spectrogram:
+            raise ValueError(
+                "Spectrogram data not available. Re-encode audio with compute_spectrogram=True."
+            )
+
+        hop_length = self.z.attrs.get("spectrogram_hop_length", 512)
+
+        # Convert time to audio sample indices, then to spectrogram frames
+        # This matches how librosa computes frame indices
+        start_sample = int(start_time * self.samplerate)
+        end_sample = int((start_time + duration) * self.samplerate)
+
+        # Convert samples to frames (matching librosa's frame calculation)
+        start_frame = start_sample // hop_length
+        end_frame = (end_sample + hop_length - 1) // hop_length  # Round up to include partial frames
+
+        # Clamp to valid range
+        start_frame = max(0, start_frame)
+        end_frame = min(self.spectrogram.shape[1], end_frame)
+
+        return self.spectrogram[:, start_frame:end_frame]
+
+    def get_spectrogram_params(self) -> Dict[str, int]:
+        """
+        Return the parameters used to compute the stored spectrogram.
+
+        Returns:
+            Dictionary with n_fft, hop_length, freq_bins, and time_frames.
+
+        Raises:
+            ValueError: If spectrogram data is not available in this Zarr store.
+        """
+        if not self.has_spectrogram:
+            raise ValueError(
+                "Spectrogram data not available. Re-encode audio with compute_spectrogram=True."
+            )
+
+        return {
+            "n_fft": self.z.attrs.get("spectrogram_n_fft"),
+            "hop_length": self.z.attrs.get("spectrogram_hop_length"),
+            "freq_bins": self.z.attrs.get("spectrogram_freq_bins"),
+            "time_frames": self.z.attrs.get("spectrogram_time_frames"),
+        }

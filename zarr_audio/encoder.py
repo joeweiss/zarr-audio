@@ -5,6 +5,7 @@ import warnings
 from typing import Optional, Tuple
 
 import fsspec
+import librosa
 import numpy as np
 import soundfile as sf
 import zarr
@@ -30,6 +31,9 @@ class AudioEncoder:
         chunk_duration: int = 10,
         encoding_read_duration: int = 600,
         storage_class: Optional[str] = None,
+        compute_spectrogram: bool = False,
+        n_fft: int = 2048,
+        hop_length: int = 512,
     ):
         """
         Initialize an AudioEncoder.
@@ -41,6 +45,9 @@ class AudioEncoder:
             chunk_duration: Duration (sec) of each Zarr chunk.
             encoding_read_duration: Duration (sec) of read blocks while encoding; only adjust if OOM errors occur during encoding.
             storage_class: Optional S3 storage class (e.g., 'INTELLIGENT_TIERING'). Defaults to INTELLIGENT_TIERING.
+            compute_spectrogram: Whether to compute and store spectrogram alongside audio.
+            n_fft: FFT window size for spectrogram computation.
+            hop_length: Number of samples between successive frames for spectrogram.
         """
         self.input_uri = input_uri
         self.output_uri = output_uri
@@ -48,6 +55,9 @@ class AudioEncoder:
         self.chunk_duration = chunk_duration
         self.encoding_read_duration = encoding_read_duration
         self._local_path: Optional[str] = None
+        self.compute_spectrogram = compute_spectrogram
+        self.n_fft = n_fft
+        self.hop_length = hop_length
 
         self.storage_class = storage_class
 
@@ -195,6 +205,11 @@ class AudioEncoder:
                 }
             )
 
+            # Compute and store spectrogram if requested
+            if self.compute_spectrogram:
+                print(f"🎵 Computing spectrogram (n_fft={self.n_fft}, hop_length={self.hop_length})...")
+                self._encode_spectrogram(root, samplerate, frames, dtype)
+
             print(
                 f"✅ Encoded {self.input_uri} → {self.output_uri} "
                 f"[{frames / samplerate:.2f} sec, {bit_depth}-bit {dtype}, "
@@ -206,3 +221,62 @@ class AudioEncoder:
         finally:
             print(f"🗑️ Clean-up {self._local_path}")
             os.remove(self._local_path)
+
+    def _encode_spectrogram(
+        self, root: zarr.Group, samplerate: int, frames: int, dtype: str
+    ) -> None:
+        """
+        Compute and store spectrogram in the Zarr group.
+
+        Args:
+            root: Zarr group to store spectrogram in.
+            samplerate: Sample rate of the audio.
+            frames: Total number of audio frames.
+            dtype: Data type of the audio array.
+        """
+        # Read all audio at once to compute spectrogram (mono conversion)
+        with sf.SoundFile(self._local_path) as sf_info:
+            sf_info.seek(0)
+            audio_data = sf_info.read(dtype="float32", always_2d=True)
+
+        # Convert to mono if stereo/multichannel
+        if audio_data.ndim > 1 and audio_data.shape[1] > 1:
+            audio_data = np.mean(audio_data, axis=1, dtype=np.float32)
+        else:
+            audio_data = audio_data.flatten().astype(np.float32)
+
+        # Compute STFT for entire audio
+        S = librosa.stft(audio_data, n_fft=self.n_fft, hop_length=self.hop_length)
+        mag = np.abs(S, dtype=np.float32)
+
+        # Convert to dB
+        S_db = librosa.amplitude_to_db(mag, ref=np.max(mag))
+
+        n_freq_bins, total_time_frames = S_db.shape
+
+        # Create spectrogram dataset
+        # Chunk by time (e.g., ~10 seconds worth of frames)
+        time_chunk_size = max(1, int((samplerate * self.chunk_duration) / self.hop_length))
+
+        spec_array = root.create_dataset(
+            "spectrogram",
+            shape=(n_freq_bins, total_time_frames),
+            chunks=(n_freq_bins, time_chunk_size),
+            dtype="float32",
+            compressor=zarr.Blosc(cname="zstd", clevel=5, shuffle=1),
+            overwrite=True,
+        )
+
+        # Store the spectrogram
+        spec_array[:, :] = S_db
+
+        # Clean up
+        del S, mag, S_db, audio_data
+
+        # Store spectrogram metadata
+        root.attrs["spectrogram_n_fft"] = self.n_fft
+        root.attrs["spectrogram_hop_length"] = self.hop_length
+        root.attrs["spectrogram_freq_bins"] = n_freq_bins
+        root.attrs["spectrogram_time_frames"] = total_time_frames
+
+        print(f"✅ Spectrogram stored: {n_freq_bins} freq bins × {total_time_frames} time frames")
