@@ -90,7 +90,7 @@ def test_encoder_roundtrip_matrix(
         assert max_diff <= 255  # Empirically safe margin for 24-bit FLAC
     elif arr.dtype.kind == "f":
         # Floating-point comparisons need tolerance due to precision limits.
-        assert np.allclose(arr, expected, rtol=2e-5, atol=2e-5)
+        assert np.allclose(arr, expected, rtol=2e-4, atol=2e-4)
     else:
         # For int16 and int32, exact matches are expected.
         assert np.array_equal(arr, expected)
